@@ -1,0 +1,9 @@
+node_modules/
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Verification harness output
+verify-out.txt
+ui-verify.txt
+*.png

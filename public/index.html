@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wingman Pilot</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✈</span>
+      <div>
+        <h1>Wingman Pilot</h1>
+        <p class="tagline">Real-time objection coach for the realtor</p>
+      </div>
+    </div>
+    <div class="status">
+      <span id="live-dot" class="dot"></span>
+      <span id="status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- LEFT: live transcript feed -->
+    <section class="panel feed-panel">
+      <div class="panel-head">
+        <h2>Live transcript</h2>
+        <div class="feed-controls">
+          <label class="sr-only" for="scenario">Scenario</label>
+          <select id="scenario"></select>
+          <button id="pause-btn" class="ghost-btn">Pause</button>
+        </div>
+      </div>
+      <div id="scenario-meta" class="scenario-meta"></div>
+      <div id="transcript" class="transcript" aria-live="polite"></div>
+    </section>
+
+    <!-- RIGHT: objection alert + action log -->
+    <section class="panel side">
+      <div id="alert-panel" class="alert hidden">
+        <div class="alert-head">
+          <span class="alert-badge">Objection detected</span>
+          <span id="confidence" class="confidence"></span>
+        </div>
+        <h3 id="alert-category"></h3>
+        <p id="alert-why" class="alert-why"></p>
+
+        <div class="coach">
+          <div class="coach-line">
+            <span class="lang-tag">EN</span>
+            <p id="line-en"></p>
+          </div>
+          <div class="coach-line">
+            <span class="lang-tag">ES</span>
+            <p id="line-es"></p>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="accept-btn" class="btn accept">Accept</button>
+          <button id="skip-btn" class="btn skip">Skip</button>
+          <button id="regen-btn" class="btn regen">Regenerate</button>
+        </div>
+      </div>
+
+      <div id="idle-state" class="idle">
+        <div class="idle-icon">👂</div>
+        <p>Listening for the next objection…</p>
+      </div>
+
+      <div class="log-wrap">
+        <h2>Interaction log</h2>
+        <ul id="log" class="log"></ul>
+      </div>
+    </section>
+  </main>
+
+  <script src="/engine.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
