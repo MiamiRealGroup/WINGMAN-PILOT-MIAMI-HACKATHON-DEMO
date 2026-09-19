@@ -2,15 +2,10 @@
   "name": "wingman-pilot",
   "version": "1.0.0",
   "private": true,
-  "description": "Real-time objection coach for realtors — streaming transcript detection with EN/ES next-line coaching.",
+  "description": "Real-time objection coach for realtors — live transcript in, EN/ES next line out.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test tests/engine.test.js && node tests/multiclient.test.js",
-    "verify:detect": "node scripts/verify-detect.js",
-    "verify:ui": "node scripts/verify-ui.js",
-    "verify:live": "node scripts/verify-live.js",
-    "verify": "npm run test && npm run verify:detect && npm run verify:ui"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18"

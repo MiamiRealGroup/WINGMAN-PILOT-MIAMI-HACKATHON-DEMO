@@ -1,172 +1,169 @@
-// Wingman Pilot — zero-dependency Node server.
-// Serves the static frontend and streams a simulated live transcript over
-// Server-Sent Events (SSE). The SSE feed is the "stream interface": swapping
-// the simulator for a real live-audio transcription service tomorrow only
-// touches this file, never the client.
+/* Wingman Pilot — server.
+ *
+ * Serves the app and the two ElevenLabs routes. Zero dependencies: Node's own
+ * http/fs only, so a deploy needs no `npm install` step.
+ *
+ *   npm start            -> http://localhost:3000
+ *   PORT is honoured      (Railway, Render, Fly and friends all set it)
+ *
+ * The API key stays here. The browser only ever receives a single-use token.
+ */
+'use strict';
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = process.env.PORT || 5173;
+const eleven = require('./server-route.js');
+const SCENARIOS = require('./scenarios.js');
 
-// ---------------------------------------------------------------- transcript
-// A continuous transcript is just a sequence of { speaker, text } utterances.
-// The simulator emits them phrase-by-phrase at natural speaking pace, exactly
-// like a live-ASR stream would. feedController replaces this tomorrow.
-const { SCENARIOS } = require('./src/data/scenarios.js');
+const PORT = process.env.PORT || 3000;
+const ROOT = __dirname;
 
-// --------------------------------------------------------------- static app
 const MIME = {
   '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.png': 'image/png',
   '.ico': 'image/x-icon',
 };
 
-function serveStatic(req, res) {
-  let urlPath = decodeURIComponent(req.url.split('?')[0]);
-  if (urlPath === '/') urlPath = '/index.html';
-  const filePath = path.join(__dirname, 'public', path.normalize(urlPath));
-  if (!filePath.startsWith(path.join(__dirname, 'public'))) {
-    res.writeHead(403).end('Forbidden');
-    return;
+/* ---------------------------------------------------------------- adapters
+ * server-route.js targets Express-shaped (req, res). These thin shims let the
+ * same handlers run on a bare http server, so the tested code is the shipped
+ * code rather than a rewrite.
+ */
+function shimRes(res) {
+  const headers = {};
+  return {
+    statusCode: 200,
+    set(k, v) { headers[String(k).toLowerCase()] = v; return this; },
+    status(c) { this.statusCode = c; return this; },
+    json(obj) {
+      const body = Buffer.from(JSON.stringify(obj));
+      headers['content-type'] = 'application/json; charset=utf-8';
+      headers['content-length'] = body.length;
+      res.writeHead(this.statusCode, headers);
+      res.end(body);
+      return this;
+    },
+    send(data) {
+      let body;
+      if (data === undefined || data === null) body = Buffer.alloc(0);
+      else if (Buffer.isBuffer(data)) body = data;
+      else if (data instanceof Uint8Array) body = Buffer.from(data);
+      else if (typeof data === 'string') body = Buffer.from(data);
+      else body = Buffer.from(JSON.stringify(data));
+      if (!headers['content-type']) headers['content-type'] = 'application/octet-stream';
+      headers['content-length'] = body.length;
+      res.writeHead(this.statusCode, headers);
+      res.end(body);
+      return this;
+    },
+  };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let raw = '';
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(parse(raw)); } };
+    req.on('data', (c) => {
+      raw += c;
+      if (raw.length > 1e6) { req.destroy(); finish(); } // cap at 1MB
+    });
+    req.on('end', finish);
+    req.on('error', finish);
+    function parse(s) { try { return s ? JSON.parse(s) : {}; } catch (e) { return {}; } }
+  });
+}
+
+/* ------------------------------------------------------------------ routes */
+const scribeToken = eleven.createScribeTokenHandler();
+const speak = eleven.createSpeakHandler();
+
+function sendJson(res, code, obj) {
+  const body = Buffer.from(JSON.stringify(obj));
+  res.writeHead(code, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': body.length,
+  });
+  res.end(body);
+}
+
+async function handleApi(req, res, pathname) {
+  if (pathname === '/api/health') {
+    sendJson(res, 200, {
+      ok: true,
+      hasKey: !!eleven.resolveKey({}),
+      scenarios: SCENARIOS.length,
+    });
+    return true;
   }
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404).end('Not found');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+
+  if (pathname === '/api/scenarios') {
+    sendJson(res, 200, SCENARIOS.map((s) => ({ index: s.index, role: s.role, label: s.label })));
+    return true;
+  }
+
+  if (pathname === '/api/scribe-token') {
+    await scribeToken(req, shimRes(res));
+    return true;
+  }
+
+  if (pathname === '/api/speak') {
+    req.body = await readJsonBody(req);
+    await speak(req, shimRes(res));
+    return true;
+  }
+
+  return false;
+}
+
+/* ------------------------------------------------------------------ static */
+function serveStatic(req, res, pathname) {
+  const rel = pathname === '/' ? '/index.html' : pathname;
+  // Resolve inside ROOT only — a bare path.join would let /../ escape the app.
+  const file = path.join(ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
+  if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('forbidden'); return; }
+
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('not found'); return; }
+    const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    res.writeHead(200, { 'content-type': type, 'content-length': data.length });
     res.end(data);
   });
 }
 
-// ------------------------------------------------------------------- server
-const server = http.createServer((req, res) => {
-  const url = req.url.split('?')[0];
+/* ------------------------------------------------------------------ server */
+const server = http.createServer(async (req, res) => {
+  let pathname;
+  try {
+    pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
+  } catch (e) {
+    res.writeHead(400); res.end('bad request'); return;
+  }
 
-  if (req.method === 'GET' && url === '/api/scenarios') {
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(
-      JSON.stringify(SCENARIOS.map((s, i) => ({ index: i, id: s.id, role: s.role, label: s.label })))
-    );
-    return;
+  try {
+    if (pathname.startsWith('/api/')) {
+      const handled = await handleApi(req, res, pathname);
+      if (!handled) sendJson(res, 404, { error: 'no such endpoint' });
+      return;
+    }
+    serveStatic(req, res, pathname);
+  } catch (err) {
+    console.error('[server]', err && err.message);
+    if (!res.headersSent) sendJson(res, 500, { error: 'internal error' });
+    else res.end();
   }
-  if (req.method === 'GET' && url === '/api/stream') {
-    handleStream(req, res);
-    return;
-  }
-  if (req.method === 'POST' && url === '/api/pause') {
-    let body = '';
-    req.on('data', (c) => (body += c));
-    req.on('end', () => {
-      try {
-        const { paused, clientId } = JSON.parse(body || '{}');
-        const target = clientId && simulator.clients.get(clientId);
-        if (target) {
-          // Pause just the viewer that asked, so one person hitting Pause
-          // doesn't freeze everyone else's feed.
-          target.paused = Boolean(paused);
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ paused: target.paused, clientId: target.id }));
-        } else {
-          simulator.paused = Boolean(paused);
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ paused: simulator.paused }));
-        }
-      } catch {
-        res.writeHead(400).end('Bad request');
-      }
-    });
-    return;
-  }
-  serveStatic(req, res);
 });
 
-// ----------------------------------------------------------------- simulator
-// Each client gets its own feed so the demo is deterministic per tab. The
-// controller below is the single point that would be replaced by a live
-// microphone pipeline — everything upstream of "push an utterance" is opaque
-// to the rest of the app.
-const simulator = {
-  paused: false,        // fallback for clients that don't identify themselves
-  clients: new Map(),   // id -> { id, res, paused }, so Pause is per-viewer
-  nextId: 1,
-
-  // Write to one client only. Each connection runs its own scenario, so
-  // broadcasting would interleave two viewers' transcripts into both.
-  push(res, obj) {
-    res.write(`data: ${JSON.stringify(obj)}\n\n`);
-  },
-
-  run(scenarioIndex, client) {
-    const res = client.res;
-    const scenario = SCENARIOS[scenarioIndex % SCENARIOS.length];
-    this.push(res, { type: 'start', clientId: client.id, scenarioId: scenario.id, role: scenario.role, label: scenario.label, total: scenario.lines.length });
-
-    // Flatten every line into phrase-sized chunks, then pace the whole feed.
-    let chunkIndex = 0;
-    const chunks = [];
-    for (const line of scenario.lines) {
-      for (const chunk of chunkPhrases(line.text)) {
-        chunks.push({ speaker: line.speaker, text: chunk });
-      }
-    }
-
-    const timer = setInterval(() => {
-      if (client.paused) return;
-      if (chunkIndex >= chunks.length) {
-        clearInterval(timer);
-        this.push(res, { type: 'done' });
-        return;
-      }
-      const chunk = chunks[chunkIndex++];
-      const last = chunkIndex === chunks.length;
-      this.push(res, { type: 'chunk', speaker: chunk.speaker, text: chunk.text, done: last });
-    }, PACE_MS);
-
-    // Stop streaming when the client disconnects.
-    res.on('close', () => clearInterval(timer));
-  },
-};
-
-const PACE_MS = 260; // ~4 phrase chunks per second — natural, readable speech pace.
-
-// Split a line into 2–4 word phrases so text "arrives" incrementally like
-// streaming ASR partials, rather than dropping whole lines at once.
-function chunkPhrases(text) {
-  const words = text.split(/\s+/);
-  const chunks = [];
-  for (let i = 0; i < words.length; i += 3) {
-    chunks.push(words.slice(i, i + 3).join(' '));
-  }
-  return chunks.length ? chunks : [text];
-}
-
-function handleStream(req, res) {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-  res.write(':ok\n\n');
-
-  const client = { id: simulator.nextId++, res, paused: false };
-  simulator.clients.set(client.id, client);
-
-  // Client may request a specific scenario (?scenario=N); otherwise assign
-  // the next scenario in round-robin so the demo cycles through the set.
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const requested = Number(url.searchParams.get('scenario'));
-  const scenarioIndex = Number.isInteger(requested) && SCENARIOS[requested]
-    ? requested
-    : simulator.clients.size - 1;
-
-  simulator.run(scenarioIndex, client);
-  req.on('close', () => simulator.clients.delete(client.id));
-}
-
 server.listen(PORT, () => {
-  console.log(`Wingman Pilot running at http://localhost:${PORT}`);
+  const hasKey = !!eleven.resolveKey({});
+  console.log(`Wingman Pilot listening on http://localhost:${PORT}`);
+  console.log(`  scenarios : ${SCENARIOS.length}`);
+  console.log(`  live mic  : ${hasKey ? 'ready (ELEVENLABS_API_KEY set)' : 'needs ELEVENLABS_API_KEY'}`);
 });

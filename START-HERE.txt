@@ -1,0 +1,79 @@
+WINGMAN PILOT
+=============
+
+Real-time objection coach for realtors.
+
+Start here
+----------
+
+  Double-click  ->  RUN-APP.bat
+
+That's it. No installing, no setup. A browser window opens with the app.
+
+  * The 8 sample conversations work immediately.
+  * To use your real microphone, see "Live microphone" below.
+  * Keep the black window open while you use the app. Close it to stop.
+
+
+Check it works
+--------------
+
+  Double-click  ->  CHECK-MY-WORK.bat
+
+Two pages open and test themselves. You are looking for GREEN boxes:
+ALL 71 CHECKS PASS and ALL 21 CHECKS PASS.
+
+A red box means something is broken. Take a screenshot and send it on.
+
+
+Live microphone
+---------------
+
+The microphone needs your ElevenLabs key. Once only:
+
+  1. In this folder, find the file   .env.example
+  2. Copy it, and rename the copy to   .env
+     (the name must be exactly  .env  - nothing before the dot)
+  3. Open  .env  in Notepad.
+  4. Replace  sk_your_key_here  with your real key. Save.
+  5. Run RUN-APP.bat again, and pick "Live microphone" in the dropdown.
+
+If the key is wrong or missing, the app tells you and keeps working with
+the sample conversations.
+
+
+Putting it online
+-----------------
+
+See DEPLOY.md. The short version: upload this folder, and set one variable
+called ELEVENLABS_API_KEY. There is no build step and nothing to install.
+
+
+What each file is
+-----------------
+
+  RUN-APP.bat           Runs the app
+  CHECK-MY-WORK.bat     Runs the tests
+  README.md             How it works, and what has been proven
+  DEPLOY.md             How to put it online
+  .env.example          Template for your key (copy it to .env)
+
+  index.html  styles.css  app.js     The app itself
+  engine.js                          Finds objections, writes the EN/ES line
+  sim-source.js                      The sample conversations
+  live-source.js                     The real microphone
+  speak.js                           Optional: reads the line aloud
+  scenarios.js                       The 8 scripts
+  server.js  server-route.js         The server (for online use)
+  serve.ps1                          The local server (Windows)
+  integration-test.html              The 71-check test
+  syntax-check.html                  The 21-check test
+
+
+One honest note
+---------------
+
+The microphone has never been tried with a real key - it has only ever been
+tested against a stand-in. Everything else is tested and passing. The first
+real run is the real test; if it fails, it will most likely be one field
+name, which is noted in README.md.
