@@ -6,10 +6,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/engine.test.js",
+    "test": "node --test tests/engine.test.js && node tests/multiclient.test.js",
     "verify:detect": "node scripts/verify-detect.js",
     "verify:ui": "node scripts/verify-ui.js",
-    "verify": "npm run verify:detect && npm run verify:ui"
+    "verify:live": "node scripts/verify-live.js",
+    "verify": "npm run test && npm run verify:detect && npm run verify:ui"
   },
   "engines": {
     "node": ">=18"

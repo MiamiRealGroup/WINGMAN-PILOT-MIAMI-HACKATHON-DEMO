@@ -6,4 +6,8 @@ Thumbs.db
 # Verification harness output
 verify-out.txt
 ui-verify.txt
+live-verify.txt
 *.png
+
+# Scratch commit-message files
+.commitmsg*

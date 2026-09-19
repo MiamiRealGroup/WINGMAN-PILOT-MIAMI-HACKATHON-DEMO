@@ -6,11 +6,14 @@
 // This is the regression check for "the streaming loop must work every time".
 // Run the server first, then: node scripts/verify-detect.js
 const http = require('http');
-const path = require('path');
+const https = require('https');
 const { SCENARIOS } = require('../src/data/scenarios.js');
 const { detect, generate } = require('../public/engine.js');
 
-const BASE = process.env.BASE || 'http://localhost:5173';
+const BASE = (process.argv[2] || process.env.BASE || 'http://localhost:5173').trim();
+// Pick the transport from the URL so the same harness can check localhost
+// or a deployed deployment over HTTPS.
+const transport = BASE.startsWith('https') ? https : http;
 
 // One scenario, streamed live, returning the first objection that fires.
 function runScenario(index) {
@@ -20,7 +23,7 @@ function runScenario(index) {
     let fired = null;
     let role = scenario.role;
 
-    const req = http.get(`${BASE}/api/stream?scenario=${index}`, (res) => {
+    const req = transport.get(`${BASE}/api/stream?scenario=${index}`, (res) => {
       res.setEncoding('utf8');
       let buf = '';
       res.on('data', (d) => {

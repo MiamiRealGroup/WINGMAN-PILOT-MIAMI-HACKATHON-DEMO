@@ -16,6 +16,7 @@
   let currentAlert = null;  // { category, label, confidence, why }
   let currentBubble = null; // DOM bubble we're appending to
   let currentSpeaker = null;
+  let clientId = null;      // server-assigned id, so Pause only affects this tab
   const interactions = [];  // in-memory log (Accept / Skip)
 
   // ------------------------------------------------------------- DOM
@@ -47,6 +48,7 @@
   function handleMessage(msg) {
     if (msg.type === 'start') {
       role = msg.role;
+      clientId = msg.clientId;
       scenarioMeta.textContent = `${msg.label} — ${msg.role === 'seller' ? 'seller side' : 'buyer side'}`;
       setStatus('live');
       return;
@@ -205,7 +207,7 @@
     await fetch('/api/pause', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paused: isPaused }),
+      body: JSON.stringify({ paused: isPaused, clientId }),
     });
     pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
     setStatus(isPaused ? 'paused' : 'live');

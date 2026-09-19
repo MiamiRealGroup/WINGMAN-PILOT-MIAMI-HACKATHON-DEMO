@@ -62,9 +62,19 @@ const server = http.createServer((req, res) => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       try {
-        const { paused } = JSON.parse(body || '{}');
-        simulator.paused = Boolean(paused);
-        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ paused: simulator.paused }));
+        const { paused, clientId } = JSON.parse(body || '{}');
+        const target = clientId && simulator.clients.get(clientId);
+        if (target) {
+          // Pause just the viewer that asked, so one person hitting Pause
+          // doesn't freeze everyone else's feed.
+          target.paused = Boolean(paused);
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ paused: target.paused, clientId: target.id }));
+        } else {
+          simulator.paused = Boolean(paused);
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ paused: simulator.paused }));
+        }
       } catch {
         res.writeHead(400).end('Bad request');
       }
@@ -80,17 +90,20 @@ const server = http.createServer((req, res) => {
 // microphone pipeline — everything upstream of "push an utterance" is opaque
 // to the rest of the app.
 const simulator = {
-  paused: false,
-  clients: new Set(),
+  paused: false,        // fallback for clients that don't identify themselves
+  clients: new Map(),   // id -> { id, res, paused }, so Pause is per-viewer
+  nextId: 1,
 
-  push(obj) {
-    const frame = `data: ${JSON.stringify(obj)}\n\n`;
-    for (const res of this.clients) res.write(frame);
+  // Write to one client only. Each connection runs its own scenario, so
+  // broadcasting would interleave two viewers' transcripts into both.
+  push(res, obj) {
+    res.write(`data: ${JSON.stringify(obj)}\n\n`);
   },
 
-  run(scenarioIndex, res) {
+  run(scenarioIndex, client) {
+    const res = client.res;
     const scenario = SCENARIOS[scenarioIndex % SCENARIOS.length];
-    this.push({ type: 'start', scenarioId: scenario.id, role: scenario.role, label: scenario.label, total: scenario.lines.length });
+    this.push(res, { type: 'start', clientId: client.id, scenarioId: scenario.id, role: scenario.role, label: scenario.label, total: scenario.lines.length });
 
     // Flatten every line into phrase-sized chunks, then pace the whole feed.
     let chunkIndex = 0;
@@ -102,15 +115,15 @@ const simulator = {
     }
 
     const timer = setInterval(() => {
-      if (this.paused) return;
+      if (client.paused) return;
       if (chunkIndex >= chunks.length) {
         clearInterval(timer);
-        this.push({ type: 'done' });
+        this.push(res, { type: 'done' });
         return;
       }
       const chunk = chunks[chunkIndex++];
       const last = chunkIndex === chunks.length;
-      this.push({ type: 'chunk', speaker: chunk.speaker, text: chunk.text, done: last });
+      this.push(res, { type: 'chunk', speaker: chunk.speaker, text: chunk.text, done: last });
     }, PACE_MS);
 
     // Stop streaming when the client disconnects.
@@ -138,7 +151,9 @@ function handleStream(req, res) {
     Connection: 'keep-alive',
   });
   res.write(':ok\n\n');
-  simulator.clients.add(res);
+
+  const client = { id: simulator.nextId++, res, paused: false };
+  simulator.clients.set(client.id, client);
 
   // Client may request a specific scenario (?scenario=N); otherwise assign
   // the next scenario in round-robin so the demo cycles through the set.
@@ -148,8 +163,8 @@ function handleStream(req, res) {
     ? requested
     : simulator.clients.size - 1;
 
-  simulator.run(scenarioIndex, res);
-  req.on('close', () => simulator.clients.delete(res));
+  simulator.run(scenarioIndex, client);
+  req.on('close', () => simulator.clients.delete(client.id));
 }
 
 server.listen(PORT, () => {

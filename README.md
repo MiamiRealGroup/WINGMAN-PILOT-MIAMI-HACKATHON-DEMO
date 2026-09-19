@@ -65,14 +65,23 @@ same swap point as detection.
 
 ## Test
 
+Start the server first (`node server.js`) — most checks talk to a live instance.
+
 ```bash
-npm test          # engine unit tests (detection + generation)
-npm run verify    # live-stream detection check + UI interaction harness
+npm test                    # engine unit tests + cross-viewer isolation
+npm run verify:detect       # all 8 scenarios, against a live stream
+npm run verify:ui           # drives the real Accept/Skip/Regenerate/Pause handlers
+npm run verify:live         # confirms SSE streams through a deployed proxy
+npm run verify              # test + detect + ui
 ```
 
+- `npm test` — detection/generation unit tests, plus `tests/multiclient.test.js`,
+  which opens two simultaneous streams and asserts neither viewer's transcript
+  leaks into the other, and that pausing one viewer doesn't freeze the other.
 - `npm run verify:detect` — connects to the real SSE stream and confirms every
   scenario's objection fires with the right category, confidence and EN/ES line.
+  Accepts a base URL: `node scripts/verify-detect.js https://your-app.up.railway.app`.
 - `npm run verify:ui` — loads the real `public/app.js` against a DOM stub and
   drives the Accept / Skip / Regenerate / Pause handlers.
-
-Start the server first; `verify:detect` needs it running on port 5173.
+- `npm run verify:live` — checks that a deployed instance streams progressively
+  rather than buffering all chunks at once.
